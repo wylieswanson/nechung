@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+
+import locale
+from nechung import nechung
+from AgileCLU import AgileCLU
+import tempfile, shutil, os, urllib, subprocess
+from operator import itemgetter
+import datetime, time
+
+mutator = nechung( 'indexhtml' )
+
+def sizeofobject(num):
+	s = str(num)
+	return s
+
+def mooted(num):
+	for x in ['bytes','KB','MB','GB','TB']:
+		if num < 1024.0: 
+			str = "%3.1f %s" % (num, x)
+			return str.replace(" ","&nbsp;")
+		num /= 1024.0
+
+def timestamp( timeval ):
+	return datetime.datetime.fromtimestamp(timeval).strftime('%m/%d/%Y')
+
+def mutation():
+	username = mutator.cfg.get( "Agile", "username" )
+	fsroot = mutator.cfg.get( "Agile", "fsroot" )
+	mt = mutator.cfg.get( "Agile", "mt" )
+
+	mutator.logger.info( "[+] AGILE LOGIN "+username )
+	subprocess.call( ['/usr/local/bin/agilerm', '-l', username, mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] ] )
+	agile = AgileCLU( username )
+
+	mutator.logger.info( "[+] LISTFILE "+mutator.payload['object']['write_path'] )
+	fl = agile.listFile(mutator.payload['object']['write_path'], 1000, 0, 1)
+	items = fl['list']
+	items = sorted( items, key=itemgetter('name'))
+	items = sorted( items, key=lambda x: x['name'].lower())
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) 
+	os.chdir( tempdir )
+	files = 0
+	f = open( tempdir+'/index.html', 'w')
+	f.write("""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>Directory of """+mutator.payload['object']['write_path']+"""</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" href="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/style.css" />
+</head>
+<body>
+<h3>Directory of """+mutator.payload['object']['write_path']+"""</h3>
+
+<table cellpadding="0" cellspacing="0" border="0" id="table" class="sortable">
+<thead>
+<tr>
+<th>Name</th>
+<th>Created</th>
+<th>Last Modified</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+""")
+	for item in items:
+		if (item['name']<>mutator.payload['object']['name']) and (item['name']<>'index.html'):
+			files += 1
+			f.write( "<tr><td><a href='"+mt+fsroot+urllib.quote(mutator.payload['object']['write_path']+'/'+item['name'])+"'>"+item['name']+"</a></td><td>"+timestamp(item['stat']['ctime'])+"<td>"+timestamp(item['stat']['mtime'])+"</td><td>"+sizeofobject(item['stat']['size'])+"</td></tr>"+'\n' )
+	f.write("""
+</tbody>
+</table>
+<div id="controls">
+<div id="perpage">
+<select onchange="sorter.size(this.value)">
+<option value="5">5</option>
+<option value="10" selected="selected">10</option>
+<option value="20">20</option>
+<option value="50">50</option>
+<option value="100">100</option>
+</select>
+<span>Entries Per Page</span>
+</div>
+<div id="navigation">
+<img src="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/images/first.gif" width="16" height="16" alt="First Page" onclick="sorter.move(-1,true)" />
+<img src="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/images/previous.gif" width="16" height="16" alt="First Page" onclick="sorter.move(-1)" />
+<img src="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/images/next.gif" width="16" height="16" alt="First Page" onclick="sorter.move(1)" />
+<img src="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/images/last.gif" width="16" height="16" alt="Last Page" onclick="sorter.move(1,true)" />
+</div>
+<div id="text">Displaying Page <span id="currentpage"></span> of <span id="pagelimit"></span></div>
+</div>
+<script type="text/javascript" src="http://global.mt.lldns.net/llnw/staff/wylie/Global/Nechung/indexhtml/script.js"></script>
+<script type="text/javascript">
+var sorter = new TINY.table.sorter("sorter");
+sorter.head = "head";
+sorter.asc = "asc";
+sorter.desc = "desc";
+sorter.even = "evenrow";
+sorter.odd = "oddrow";
+sorter.evensel = "evenselected";
+sorter.oddsel = "oddselected";
+sorter.paginate = true;
+sorter.currentid = "currentpage";
+sorter.limitid = "pagelimit";
+sorter.init("table",0);
+</script>
+</body>
+</html>""")
+	f.close()
+	if ( files > 0 ):
+		mutator.logger.info( "[+] POST index.html -> "+mutator.payload['object']['write_path'] )
+		subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir + '/' + 'index.html', mutator.payload['object']['write_path'] ] )
+	else:
+		mutator.logger.info( "[-] No files were found" )
+
+	mutator.logger.info( "[+] CLEANUP <- "+tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

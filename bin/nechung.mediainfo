@@ -1,0 +1,31 @@
+#!/usr/bin/env python
+
+from nechung import nechung
+import tempfile, shutil, os, urllib, subprocess
+
+mutator = nechung( 'mediainfo' )
+
+def mutation():
+	username = mutator.cfg.get( "Agile", "username" )
+
+	mediainfo=mutator.payload['object']['name'] + '.mediainfo.xml'
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) ; os.chdir( tempdir )
+
+	mutator.logger.info( "[+] GET "+mutator.payload['url'])
+	urllib.urlretrieve ( mutator.payload['url'], tempdir + '/' + mutator.payload['object']['name'])
+
+	mutator.logger.info( "[+] EXEC mediainfo "+mutator.payload['object']['name'] )
+	subprocess.call( ['/usr/bin/mediainfo', '--Output=XML', mutator.payload['object']['name'], '--LogFile='+tempdir+'/'+mediainfo ] )
+	os.unlink( tempdir + '/' + mutator.payload['object']['name'] )
+
+	mutator.logger.info( "[+] POST " + mediainfo + " -> " + mutator.payload['object']['write_path'] )
+	subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir + '/' + mediainfo, mutator.payload['object']['write_path'] ] )
+	
+	mutator.logger.info( "[+] CLEANUP <- "+ tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

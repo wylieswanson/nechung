@@ -1,0 +1,21 @@
+#!/usr/bin/env python
+
+from nechung import nechung
+import urllib
+
+mutator = nechung( 'downloader' )
+
+def mutation():
+	download_path=mutator.cfg.get( "downloader", "download_path" )
+
+	mutator.logger.info( "[+] GET "+mutator.payload['url'] )
+	urllib.urlretrieve ( mutator.payload['url'], download_path + '/' + mutator.payload['object']['name'])
+
+def main():
+	try:
+		mutator.worker( mutation )
+	except KeyboardInterrupt:
+		mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__":
+   main()

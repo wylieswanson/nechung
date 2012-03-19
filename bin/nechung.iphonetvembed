@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+
+import locale
+from nechung import nechung
+from AgileCLU import AgileCLU
+import tempfile, shutil, os, urllib, subprocess
+from operator import itemgetter
+import datetime, time
+
+mutator = nechung( 'iphonetvembed' )
+
+def mutation():
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) 
+
+	mutator.logger.info( "[+] GET "+mutator.payload['url'])
+	urllib.urlretrieve ( mutator.payload['url'], tempdir + '/' + mutator.payload['object']['name'])
+
+	f = open( tempdir + '/' + mutator.payload['object']['name'], "r" )
+	object = f.readline()
+	object = object.rstrip("\r\n")
+	mutator.logger.info( "[+] TARGET FOUND "+object)
+	f.close()
+
+	username = mutator.cfg.get( "Agile", "username" ) ; fsroot = mutator.cfg.get( "Agile", "fsroot" ) ; mt = mutator.cfg.get( "Agile", "mt" )
+	mutator.logger.info( "[+] TESTING AppleTV2 and iPhone ouputs for "+object )
+	# mutator.logger.info( "[+] AGILE LOGIN "+username )
+	agile = AgileCLU( username )
+
+	if agile.fexists( object+".iphone.m4v" ) and agile.fexists( object+".appletv2.m4v"):
+		objectsplit = os.path.split(object)
+		mutator.logger.info( "[+] OK "+str(objectsplit) )
+		objectpath = objectsplit[0] ; objectname= objectsplit[1] ; objectprefix = objectsplit[1] ; objectext = objectsplit[1]
+		f = open( tempdir+'/'+objectprefix+'.html', 'w')
+
+		f.write("""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>"""+objectname+"""</title>
+<script src="http://api.html5media.info/1.1.4/html5media.min.js"></script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<h3>"""+objectname+"""</h3>
+""")
+		f.write( '<div style="float: left; width: 482px">' )
+		# f.write( '<small><b>'+mt+'/'+object+'</b></small>' )
+		f.write( '<video width="480" height="272" controls preload>')
+		f.write( '<source src="'+mt+fsroot+urllib.quote(object)+'.appletv2.m4v" media="only screen and (min-device-width: 960px)"></source>' )
+		f.write( '<source src="'+mt+fsroot+urllib.quote(object)+'.iphone.m4v" media="only screen and (max-device-width: 960px)"></source>' )
+		f.write( '</video></div>' )
+		f.write( '</body></html>' )
+		f.close()
+
+		mutator.logger.info( "[+] POST "+objectprefix+".html"+" -> "+mutator.payload['object']['write_path'] )
+		subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir+'/'+objectprefix+'.html', mutator.payload['object']['write_path'] ] )
+	else:
+		mutator.logger.info( "[-] Object does not exist, skipping..." )
+
+	mutator.logger.info( "[+] CLEANUP <- "+tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+	subprocess.call( ['/usr/local/bin/agilerm', '-l', username, mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] ] )
+
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

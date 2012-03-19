@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+import pika, time, json, datetime, MySQLdb, urllib, ConfigParser, logging, atexit
+
+cfg = ConfigParser.ConfigParser()
+cfg.read( "/etc/agile/nechung/nechung.conf" )
+htreceiver_queue = cfg.get( "Queues", "htreceiver_queue" )
+htparser_log = cfg.get( "Nechung", "htparser_log" )
+
+logger = logging.getLogger( 'htparser' )
+hdlr = logging.FileHandler( htparser_log )
+formatter = logging.Formatter( '%(asctime)s nechung-htparser %(message)s' )
+hdlr.setFormatter( formatter ) ; logger.addHandler( hdlr ) ; logger.setLevel( logging.INFO )
+
+sql_host = cfg.get( "MySQL", "host" )
+sql_db = cfg.get( "MySQL", "db" )
+sql_user = cfg.get( "MySQL", "user" )
+sql_passwd = cfg.get( "MySQL", "passwd" )
+try:
+	conn = MySQLdb.connect( host = sql_host, user = sql_user, passwd = sql_passwd, db = sql_db )
+except MySQLdb.Error, e:
+	print "Error: %d: %s" % (e.args[0], e.args[1])
+	sys.exit(1)
+
+connection = pika.BlockingConnection(pika.ConnectionParameters( host=cfg.get('MQ','host'), credentials=pika.PlainCredentials( cfg.get('MQ','user'), cfg.get('MQ','password') )))
+channel = connection.channel()
+
+channel.queue_declare(queue=htreceiver_queue, durable=True)
+logger.info ('[*] Waiting for messages. Use \'sv\' to manage service.' )
+
+def nicetime( timeval ):
+	return datetime.datetime.fromtimestamp(timeval).strftime('%Y-%m-%d %H:%M:%S')
+
+def inaugurate( message, nechung_module ):
+	nechung_queue = cfg.get( "MutatorQueues", nechung_module )
+	payload = json.loads(message)
+	logger.info("[#] -> nechung."+nechung_module+" <- "+payload['path'] )
+	connection = pika.BlockingConnection(pika.ConnectionParameters( host=cfg.get('MQ','host'), credentials=pika.PlainCredentials( cfg.get('MQ','user'), cfg.get('MQ','password') )))
+	channel = connection.channel()
+	channel.queue_declare(queue=nechung_queue, durable=True)
+	channel.basic_publish(exchange='',
+		routing_key=nechung_queue,
+		body=message,
+		properties=pika.BasicProperties(
+			delivery_mode = 2, # make message persistent
+	))
+	connection.close()
+
+def history( payload ):
+	received = time.strftime('%Y-%m-%d %H:%M:%S')
+	try:
+		sql = "INSERT INTO history ( received, action, url, path, object_path, object_write_path, object_name, object_prefix, object_ext, stat_size, stat_uuid, stat_uid, stat_gid, stat_ctime, stat_mtime, cbtime ) VALUES ( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %s, '%s', %s, %s, %s, %s, %s)" % ( received, payload['action'], payload['url'], payload['path'], payload['object']['path'], payload['object']['write_path'], payload['object']['name'], payload['object']['prefix'], payload['object']['ext'], payload['stat']['size'], payload['stat']['uuid'], payload['stat']['uid'], payload['stat']['gid'], payload['stat']['ctime'], payload['stat']['mtime'], payload['cbtime'] )
+		cursor = conn.cursor ()
+		cursor.execute ( sql )
+	except MySQLdb.Error, e:
+		print "Error %d: %s" % (e.args[0], e.args[1])
+		sys.exit (1)
+	conn.commit()
+
+def callback(ch, method, properties, body):
+	payload = json.loads(body)
+	logger.info( "[@] "+payload['action']+" - "+payload['path'] )
+	history( payload )
+
+	if (payload['action']=='construct'):
+
+		if (payload['object']['write_path']=='/Nechung/Video2iOS'):
+			if (payload['object']['ext'].lower()=='.mov') or (payload['object']['ext'].lower()=='.avi') or (payload['object']['ext'].lower()=='.m2ts'):
+				inaugurate( body, 'video2ios' )
+
+		if (payload['object']['write_path']=='/Transcode/Video1') or (payload['object']['write_path']=='/Transcode/Video2') or (payload['object']['write_path']=='/Transcode/Video3'):
+			if (payload['object']['ext'].lower()=='.mpg') or (payload['object']['ext'].lower()=='.m4v') or (payload['object']['ext'].lower()=='.mov') or (payload['object']['ext'].lower()=='.avi') or (payload['object']['ext'].lower()=='.m2ts') or (payload['object']['ext'].lower()=='.mkv'):
+				inaugurate( body, 'video2ios' )
+			else:
+				logger.info( "[-] No rule to transcode this type: " +payload['object']['ext'].lower() )
+
+		if (payload['object']['write_path']=='/Transcode/Video2/iOS'):
+			if (payload['object']['ext'].lower()=='.mpg') or (payload['object']['ext'].lower()=='.m4v') or (payload['object']['ext'].lower()=='.mov') or (payload['object']['ext'].lower()=='.avi') or (payload['object']['ext'].lower()=='.m2ts') or (payload['object']['ext'].lower()=='.mkv'):
+				inaugurate( body, 'mediainfo' )
+			else:
+				logger.info( "[-] No rule to mediainfo this type: " +payload['object']['ext'].lower() )
+
+		
+		if (payload['object']['write_path']=='/Nechung/Video2iOS/iOS'):
+			inaugurate( body, 'prowl' )
+			inaugurate( body, 'mail' )
+
+		if (payload['object']['write_path']=='/Nechung/qtfaststart'): inaugurate( body, 'qtfaststart' )
+		if (payload['object']['write_path']=='/Nechung/Prowl'): inaugurate( body, 'prowl' )
+		if (payload['object']['write_path']=='/Nechung/Mail'): inaugurate( body, 'mail' )
+
+		if (payload['object']['name']=="make.iphonetv.embed.html"): inaugurate( body, 'iphonetvembed' )
+		if (payload['object']['name']=="make.video.embed.html"): inaugurate( body, 'videoembed' )
+		if (payload['object']['name']=="make.video.html"): inaugurate( body, 'videohtml' )
+		if (payload['object']['name']=="make.index.html"): inaugurate( body, 'indexhtml' )
+		if (payload['object']['name']=="make.playlist.m3u"): inaugurate( body, 'mp3m3u' )
+
+		if (payload['object']['name']=='playlist.m3u'): inaugurate( body, 'prowl' ) ; inaugurate( body, 'mail' )
+		if (payload['object']['name']=='index.html'): inaugurate( body, 'prowl' ) ; inaugurate( body, 'mail' )
+
+	ch.basic_ack(delivery_tag = method.delivery_tag)
+
+def terminate():
+		logger.info( '[*] Service exited normally.' )
+
+def main():
+	atexit.register( terminate )
+	try:
+		channel.basic_qos(prefetch_count=1)
+		channel.basic_consume(callback, queue=htreceiver_queue)
+		channel.start_consuming()
+	except KeyboardInterrupt:
+		logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__":
+	main()

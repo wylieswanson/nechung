@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+
+import os, sys, urllib, urlparse
+from xml.dom.minidom import parseString
+import httplib, urllib2, libxml2dom
+import xml.etree.cElementTree as et
+
+from nechung import nechung
+
+mutator = nechung( 'video2ios' )
+
+class	HTTPSClientAuthHandler(urllib2.HTTPSHandler):
+
+	def	__init__(self, key, cert):
+		urllib2.HTTPSHandler.__init__(self)
+		self.key = key
+		self.cert = cert
+
+	def	https_open(self, req):
+		return self.do_open(self.getConnection, req)
+
+	def	getConnection(self, host, timeout=300):
+		return httplib.HTTPSConnection(host, key_file=self.key, cert_file=self.cert)
+
+
+class	XcodeAPIClient():
+
+	opener = False ; response = False ; req = False ; xmlData = False ; xmlDoc = False ; xmlParent = False ; superDict = {}
+
+	def	__init__(self, url, key, cert):
+		self.url = url
+		self.opener = urllib2.build_opener(HTTPSClientAuthHandler(key, cert))
+
+	def	build_request(self, data):
+		self.req = urllib2.Request(self.url, data)
+		self.req.add_header('Content-type', 'text/xml')
+
+	def	send_request(self):
+		self.response = self.opener.open(self.req)
+		self.xmlData = self.response.read()
+		# print "Response: %s" % self.xmlData
+		return self.xmlData
+
+	def	do_request(self, data):
+		self.build_request(data)
+		return self.send_request()
+
+	def	get_xml_elements(self, tagname):
+		self.xmlDoc = libxml2dom.parseString(self.xmlData)
+		self.xmlParent = self.xmlDoc.getElementsByTagName(tagname)
+
+	def	fill_dict_list_from_doc(self, keys):
+		for key in keys:
+			self.superDict[key] = []
+
+		for nodes in self.xmlParent:
+			for key in keys:
+				self.superDict[key].append(nodes.getAttribute(key))
+
+def	getSrcUrlFromQueueID( QID ):
+	return "<query> <getSrcUrlFromQueueID queueid='%s' /> </query>" % str(QID)
+
+def   addFileFromURL( xcode_profile, xcode_customer, URL ):
+	return "<query><addFile type='URL' profileid='" + xcode_profile  + "' customerid='" + xcode_customer + "'>" + URL + "</addFile></query>"
+
+def   fetchFile( fileid ):
+	return "<query><fetchFile fileid='"+fileid+"' /></query>"
+
+def	addQueue( xcode_customer, fileid ):
+	return "<query><addQueue fileid='"+fileid+"' customerid='"+xcode_customer+"' /></query>"
+
+
+def mutation():
+
+	xcode_customer=mutator.cfg.get( "video2ios", "customer" )
+	xcode_profile=mutator.cfg.get( "video2ios", "profile" )
+	xcode_api=mutator.cfg.get( "video2ios", "api" )
+	xcode_cert=mutator.cfg.get( "video2ios", "cert" )
+	xcode_key=mutator.cfg.get( "video2ios", "key" )
+
+	mutator.logger.info("[+] XCODE LOGIN")
+	XCODEAPI = XcodeAPIClient(xcode_api, xcode_cert, xcode_key)
+
+	mutator.logger.info("[+] XCODE addFileFromURL "+urllib.unquote( mutator.payload['url'] ) )
+	result = XCODEAPI.do_request( addFileFromURL( xcode_profile, xcode_customer, urllib.unquote( mutator.payload['url'] ) ) )
+	# example result = "<response><status>Success</status><addFile>1155712</addFile></response>"
+	dom = parseString(result)
+	status = dom.getElementsByTagName( 'status')[0].toxml().replace( '<status>','').replace('</status>','')
+	fileid = dom.getElementsByTagName( 'addFile')[0].toxml().replace( '<addFile>','').replace('</addFile>','')
+
+	if (status == 'Success'):
+		mutator.logger.info("[+] XCODE fetchFile "+fileid )
+		result = XCODEAPI.do_request( fetchFile( fileid ))
+		# example result = "<response><status>Success</status><fetchFile fileid='1155712'>xc_asset4f5c423fbf8bb4.42778521.mov</fetchFile></response>"
+		dom = parseString(result)
+		status = dom.getElementsByTagName( 'status')[0].toxml().replace( '<status>','').replace('</status>','')
+		fetchfile = dom.getElementsByTagName( 'fetchFile')[0].toxml().replace( '<fetchFile fileid="'+fileid+'">','').replace('</fetchFile>','')
+
+		if (status == 'Success'):
+			mutator.logger.info("[+] XCODE addQueue "+fileid )
+			result = XCODEAPI.do_request( addQueue( xcode_customer, fileid ) )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

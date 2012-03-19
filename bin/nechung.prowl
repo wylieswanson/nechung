@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+
+from nechung import nechung
+import prowlpy
+
+mutator = nechung( 'prowl' )
+
+def mutation():
+	prowl_apikey = mutator.cfg.get( "prowl", "apikey" )
+	p = prowlpy.Prowl( prowl_apikey )
+	try:
+		p.add( 'Agile Nechung Oracle', 'Added', 
+			mutator.payload['path'],
+			0, None, mutator.payload['url'] )
+	except Exception,msg:
+		mutator.logger.info( "[-] prowl failed" )
+	else:
+		mutator.logger.info( "[+] -> PROWL:"+prowl_apikey+" <- "+mutator.payload['path'] )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

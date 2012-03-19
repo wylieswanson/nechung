@@ -1,0 +1,47 @@
+#!/usr/bin/env python
+
+from nechung import nechung
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+mutator = nechung( 'mail' )
+
+def mutation():
+	mail_sender = mutator.cfg.get( "mail", "sender" )
+	mail_recipient = mutator.cfg.get( "mail", "recipient" )
+	mail_image = mutator.cfg.get( "mail", "image" )
+
+	msg = MIMEMultipart( 'alternative' )
+	msg['Subject'] = "Added: " + mutator.payload['object']['name']
+	msg['From'] = mail_sender
+	msg['To'] = mail_recipient
+
+	text = "New Object:\n " + mutator.payload['path'] + "\n"
+	html = """\
+<html>
+<head>
+</head>
+<body>
+<p>
+<h2>Agile Cloud</h2>
+<small><a href='""" + mutator.payload['url'] + """'>""" + mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] + """</a></small><br>
+<br>
+<table border=1>
+<tr><th>PATH</th><td colspan=2>""" + mutator.payload['object']['write_path'] + """</td></tr>
+<tr><th>OBJECT</th><td>""" + mutator.payload['object']['prefix'] + """</td><td>""" + mutator.payload['object']['ext'] + """</td></tr>
+</table>
+<img src='""" + mail_image + """' border=0 alt=''>
+</body>
+</html>"""
+
+	part1 = MIMEText( text, 'plain' ) ; part2 = MIMEText( html, 'html' ) ; msg.attach( part1 ) ; msg.attach( part2 )
+	s = smtplib.SMTP( 'localhost' ) ; s.sendmail( mail_sender, mail_recipient, msg.as_string() ) ; s.quit()
+
+	mutator.logger.info( "[+] -> " + mail_recipient +" <- "+mutator.payload['path'] )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

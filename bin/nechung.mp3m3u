@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+
+from nechung import nechung
+from AgileCLU import AgileCLU
+import tempfile, shutil, os, urllib, subprocess
+
+mutator = nechung( 'mp3m3u' )
+
+def mutation():
+	username = mutator.cfg.get( "Agile", "username" )
+	fsroot = mutator.cfg.get( "Agile", "fsroot" )
+	mt = mutator.cfg.get( "Agile", "mt" )
+	
+	mutator.logger.info( "[+] AGILE LOGIN "+username )
+	subprocess.call( ['/usr/local/bin/agilerm', '-l', username, mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] ] )
+	agile = AgileCLU( username )
+
+	mutator.logger.info( "[+] LISTFILE "+mutator.payload['object']['write_path'] )
+	fl = agile.listFile(mutator.payload['object']['write_path'], 1000, 0, 1)
+	items = fl['list']
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) 
+	os.chdir( tempdir )
+	mp3s = 0
+	f = open( tempdir+'/playlist.m3u', 'w')
+	for item in items:
+		object_array = os.path.splitext( item['name'] )
+		object_prefix = object_array[0]
+		object_ext = object_array[1]
+		if (object_ext.lower()==".mp3"):
+			mp3s += 1
+			f.write( mt+'/'+fsroot+urllib.quote(mutator.payload['object']['write_path']+'/'+item['name'])+'\n' )
+	f.close()
+	if ( mp3s > 0 ):
+		mutator.logger.info( "[+] POST playlist.m3u -> "+mutator.payload['object']['write_path'] )
+		subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir + '/' + 'playlist.m3u', mutator.payload['object']['write_path'] ] )
+	else:
+		mutator.logger.info( "[-] No MP3s were found" )
+
+	mutator.logger.info( "[+] CLEANUP <- "+tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

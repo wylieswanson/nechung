@@ -1,0 +1,132 @@
+INTRODUCTION
+==================================================================
+In computing, the Nechung Oracle Mutator is a "super-mutator" that can be 
+setup to receive all Limelight Networks Agile Cloud mutator callsbacks for 
+a given storage path (or all paths, recursively) into the hands of the 
+Nechung mutator service, where it is running.   This effectively allows all 
+decision making and workflow control happen at the mutator, requiring less 
+advanced configuration in the Agile Cloud.
+
+This project includes examples that enable Agile to process assets in a 
+variety of ways, off-network, on-network (on Limelight computing 
+infrastructure inside the Limelight Network) in a simple way.  The goal of 
+the application/service is to provide a simple framework with a 
+"super-mutator" and lots of little simple to write regular "mutators".
+
+In non-computing terms, the Nechung Oracle is the State Oracle of Tibet. 
+The medium of the State Oracle currently resides with the current Dalai 
+Lama in Dharamsala, India. Prior to the Himalayan diaspora resulting from 
+the annexation of Tibet by the Chinese Cultural Revolution, the Nechung 
+Oracle was the designated head of the Nechung monastery in Tibet.  
+
+The Agile Cloud is a platform, built on a foundation affectionately known 
+as "LAMA", the Limelight Asset Management Architecture.  There is no
+affilliation, affection, or lack thereof, to Tibet, the Dalai Lama, or
+the Chinese Cultural Revolution.  It is just a play on perceived theme.
+
+
+Turning up new mutators
+==================================================================
+
+runitcmd setup nechung.mutatorname \
+	--log-dir "/var/log/nechung/nechung.mutatorname" \
+	--run "/www/nechung/bin/nechung.mutatorname" 
+
+Example /etc/apache2/sites-available/nechung.website.com
+==================================================================
+
+
+<VirtualHost *:80>
+   ServerAdmin webmaster@website.com
+   ServerName nechung.website.com
+
+   DocumentRoot /www/nechung.website.com/htdocs
+   <Directory />
+      Options FollowSymLinks
+      AllowOverride None
+   </Directory>
+
+   <Directory /www/nechung.website.com/htdocs/>
+      Options Indexes FollowSymLinks MultiViews
+      AllowOverride None
+      Order allow,deny
+      allow from all
+   </Directory>
+
+   <Directory /www/nechung.website.com/htdocs/>
+           DirectoryIndex index.py
+           AddHandler python-program .py
+           PythonHandler mod_python.publisher
+           PythonDebug On
+   </Directory>
+
+   ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+   <Directory "/usr/lib/cgi-bin">
+      AllowOverride None
+      Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+      Order allow,deny
+      Allow from all
+   </Directory>
+
+   ErrorLog /var/log/apache2/error-nechung.website.com.log
+   LogLevel warn
+   CustomLog /var/log/apache2/access-nechung.website.com.log combined
+</VirtualHost>
+
+
+Workflow examples
+=================================================================
+
+nechung.downloader
+------------------
+This simple example will automatically download the asset to the
+machine running the mutator.
+
+nechung.indexhtml
+-----------------
+In combination with AgileCLU, this mutator will build an index of
+all files in a directory, and write a corresponding HTML5 index
+called "index.html".
+
+nechung.iphonetvembed
+---------------------
+If you make a directory in Agile called "make.iphonetv.embed.html" 
+with one line of content in it (that specifies the path of a 
+MediaTranscode output), e.g. "/TV/Video/Storage Wars Unlocked Sell High",
+it will automatically build an index file called "Storage Wars Unlocked
+Sell High.html" that plays the best format for the device -- higher
+resolution for more capable devices.
+
+nechung.mail
+------------
+This simple example will automatically e-mail an address with the
+URL for an asset.
+
+nechung.mediainfo
+-----------------
+
+nechung.mp3m3u
+--------------
+This simple mutator will use AgileCLU to index a directory and look
+for any MP3s and build a corresponding M3U playlist.
+
+nechung.prowl
+-------------
+
+Using prowlapp.com, automatically notify iOS devices of an event.
+
+nechung.qtfaststart
+-------------------
+This simple mutator will use Daniel Taylor's qtfaststart application
+to automatically reposition video atom for fast pseudo-streaming.
+It requires that https://github.com/danielgtaylor/qtfaststart is 
+installed.
+
+nechung.video2ios
+-----------------
+
+nechung.videoembed
+------------------
+
+nechung.videohtml
+-----------------

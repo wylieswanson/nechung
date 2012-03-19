@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+
+import locale
+from nechung import nechung
+from AgileCLU import AgileCLU
+import tempfile, shutil, os, urllib, subprocess
+from operator import itemgetter
+import datetime, time
+
+mutator = nechung( 'videohtml' )
+
+def sizeofobject(num):
+	s = str(num)
+	return s
+
+def mooted(num):
+	for x in ['bytes','KB','MB','GB','TB']:
+		if num < 1024.0: 
+			str = "%3.1f %s" % (num, x)
+			return str.replace(" ","&nbsp;")
+		num /= 1024.0
+
+def timestamp( timeval ):
+	return datetime.datetime.fromtimestamp(timeval).strftime('%m/%d/%Y')
+
+def mutation():
+	username = mutator.cfg.get( "Agile", "username" )
+	fsroot = mutator.cfg.get( "Agile", "fsroot" )
+	mt = mutator.cfg.get( "Agile", "mt" )
+
+	mutator.logger.info( "[+] AGILE LOGIN "+username )
+	subprocess.call( ['/usr/local/bin/agilerm', '-l', username, mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] ] )
+	agile = AgileCLU( username )
+
+	mutator.logger.info( "[+] LISTFILE "+mutator.payload['object']['write_path'] )
+	fl = agile.listFile(mutator.payload['object']['write_path'], 1000, 0, 1)
+	items = fl['list']
+	items = sorted( items, key=itemgetter('name'))
+	items = sorted( items, key=lambda x: x['name'].lower())
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) 
+	os.chdir( tempdir )
+	files = 0
+	f = open( tempdir+'/video.html', 'w')
+	f.write("""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>Video Directory of """+mutator.payload['object']['write_path']+"""</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<script src="http://api.html5media.info/1.1.5/html5media.min.js"></script>
+</head>
+<body>
+<h3>Video Directory of """+mutator.payload['object']['write_path']+"""</h3>
+""")
+	for item in items:
+		if (item['name']<>mutator.payload['object']['name']) and (item['name']<>'video.html') and (item['name'].lower().endswith(".m4v")):
+			files += 1
+			f.write( '<div style="float: left; width: 482px"><small><b>')
+			# f.write( '<a href="'+mt+fsroot+urllib.quote(mutator.payload["object"]["write_path"]+"/"+item["name"])+'">'+item["name"]+'</a>' )
+			f.write( item["name"] )
+			f.write( '</b></small>' )
+			f.write( '<video width="480" height="272" controls preload><source src="'+mt+fsroot+urllib.quote(mutator.payload["object"]["write_path"]+"/"+item["name"])+'"></source></video>' )
+			f.write('</div>')
+	f.write("""</body></html>""")
+	f.close()
+	if ( files > 0 ):
+		mutator.logger.info( "[+] POST video.html -> "+mutator.payload['object']['write_path'] )
+		subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir + '/' + 'video.html', mutator.payload['object']['write_path'] ] )
+	else:
+		mutator.logger.info( "[-] No files were found" )
+
+	mutator.logger.info( "[+] CLEANUP <- "+tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()

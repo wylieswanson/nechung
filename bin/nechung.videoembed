@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+import locale
+from nechung import nechung
+from AgileCLU import AgileCLU
+import tempfile, shutil, os, urllib, subprocess
+from operator import itemgetter
+import datetime, time
+
+mutator = nechung( 'videoembed' )
+
+def mutation():
+	tempdir = tempfile.mkdtemp( 'nechung-'+mutator.mutator ) 
+
+	mutator.logger.info( "[+] GET "+mutator.payload['url'])
+	urllib.urlretrieve ( mutator.payload['url'], tempdir + '/' + mutator.payload['object']['name'])
+
+	mutator.logger.info( "[+] READ "+mutator.payload['object']['name'])
+	f = open( tempdir + '/' + mutator.payload['object']['name'], "r" )
+	object = f.readline()
+	object = object.rstrip("\r\n")
+	mutator.logger.info( "[+] FOUND "+object)
+	f.close()
+
+	username = mutator.cfg.get( "Agile", "username" ) ; fsroot = mutator.cfg.get( "Agile", "fsroot" ) ; mt = mutator.cfg.get( "Agile", "mt" )
+	mutator.logger.info( "[+] TEST "+object )
+	mutator.logger.info( "[+] AGILE LOGIN "+username )
+	agile = AgileCLU( username )
+
+	if agile.fexists( object ):
+		mutator.logger.info( "[+] OK "+object )
+		objectsplit = os.path.split(object)
+		mutator.logger.info( "[+] OK "+str(objectsplit) )
+		objectpath = objectsplit[0]
+		objectname= objectsplit[1]
+		objectprefix = objectsplit[1]
+		objectext = objectsplit[1]
+		f = open( tempdir+'/'+objectprefix+'.html', 'w')
+		f.write("""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>Video """+objectprefix+"""</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<script src="http://api.html5media.info/1.1.5/html5media.min.js"></script>
+</head>
+<body>
+<h3>Video """+objectprefix+"""</h3>
+""")
+		f.write( '<div style="float: left; width: 482px">')
+		# f.write( '<small><b>')
+		# f.write( mt+'/'+object )
+		# f.write( '</b></small>' )
+		f.write( '<video width="480" height="272" controls preload><source src="'+mt+fsroot+urllib.quote(object)+'"></source></video>' )
+		f.write('</div>')
+		f.write("""</body></html>""")
+		f.close()
+
+		mutator.logger.info( "[+] POST "+objectprefix+".html"+" -> "+mutator.payload['object']['write_path'] )
+		subprocess.call( ['/usr/local/bin/agilepost', '-l', username, tempdir+'/'+objectprefix+'.html', mutator.payload['object']['write_path'] ] )
+	else:
+		mutator.logger.info( "[-] Object does not exist, skipping..." )
+
+	mutator.logger.info( "[+] CLEANUP <- "+tempdir )
+	os.chdir( '/' ) ; shutil.rmtree( tempdir )
+	subprocess.call( ['/usr/local/bin/agilerm', '-l', username, mutator.payload['object']['write_path'] + '/' + mutator.payload['object']['name'] ] )
+
+
+def main():
+	try: mutator.worker( mutation )
+	except KeyboardInterrupt: mutator.logger.info( '[*] Service interrupt detected, terminating.' )
+
+if __name__ == "__main__": main()
